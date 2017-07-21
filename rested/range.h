@@ -248,6 +248,15 @@ namespace ranged
 	auto equals(T value) { return map([value](auto&& arg) { return arg == value; }); }
 
 	template <class C>
+	auto flatten(const C& c)
+	{
+		std::vector<std::decay_t<decltype(*std::begin(c))>> result; 
+		for (auto&& e : c)
+			result.push_back(e);
+		return result;
+	}
+
+	template <class C>
 	bool all(const C& c) { for (auto&& e : c) if (!e) return false; return true; }
 	template <class C>
 	bool any(const C& c) { for (auto&& e : c) if (e) return true; return false; }

@@ -47,6 +47,9 @@
     <ClInclude Include="json.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="string.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="interface\index.html">

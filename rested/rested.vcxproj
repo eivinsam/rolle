@@ -152,6 +152,7 @@
     <ClInclude Include="pointers.h" />
     <ClInclude Include="range.h" />
     <ClInclude Include="server.h" />
+    <ClInclude Include="string.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="interface\index.html" />

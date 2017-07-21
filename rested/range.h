@@ -6,10 +6,39 @@
 
 namespace ranged
 {
+	namespace details
+	{
+		template <typename Category, class IT>
+		class As : public IT
+		{
+		public:
+			using iterator_category = Category;
+			using difference_type = std::ptrdiff_t;
+			using reference = decltype(std::declval<IT>().operator*());
+			using value_type = std::remove_reference_t<reference>;
+			using pointer = value_type*;
+
+			using IT::IT;
+
+			As& operator++() { IT::operator++(); return *this; }
+
+			template <class T>
+			bool operator==(const T& other) { return !(reinterpret_cast<IT*>(this) != other); }
+		};
+	}
+
 	template <class C>
 	using iterator_of = decltype(std::begin(std::declval<C>()));
 	template <class C>
 	using sentinel_of = decltype(std::end(std::declval<C>()));
+
+	template <class IT>
+	using category_of = typename std::iterator_traits<IT>::iterator_category;
+	template <class IT>
+	using value_type_of = typename std::iterator_traits<IT>::value_type;
+
+	template <class IT>
+	decltype(auto) value_declval() { return std::declval<value_type_of<IT>>(); }
 
 	template <class T>
 	struct RangeOperator
@@ -35,30 +64,30 @@ namespace ranged
 
 	struct End {};
 
-	template <class T>
-	class IntegerIncreaser
+	namespace impl
 	{
-		T _value;
-	public:
-		using iterator_category = std::forward_iterator_tag;
-		using difference_type = std::ptrdiff_t;
-		using value_type = T;
-		using reference = value_type;
-		using pointer = value_type*;
+		template <class T>
+		class Increaser
+		{
+			T _value;
+		public:
+			Increaser(T value) : _value(value) { }
 
-		IntegerIncreaser(T value) : _value(value) { }
+			Increaser& operator++() { ++_value; return *this; }
 
-		IntegerIncreaser& operator++() { ++_value; return *this; }
+			const T& operator*()  const { return  _value; }
+			const T* operator->() const { return &_value; }
 
-		reference operator*() const { return _value; }
-
-		bool operator!=(const IntegerIncreaser& other) const { return _value != other._value; }
-	};
+			bool operator!=(const Increaser& other) const { return _value != other._value; }
+		};
+	}
+	template <class T>
+	using Increaser = details::As<std::forward_iterator_tag, impl::Increaser<T>>;
 
 	struct Indices : public RangeOperator<Indices>
 	{
 		template <class C>
-		Range<IntegerIncreaser<size_t>> operator()(const C& c) const { return { 0, c.size() }; }
+		Range<Increaser<size_t>> operator()(const C& c) const { return { 0, c.size() }; }
 	};
 	static constexpr Indices indices;
 
@@ -73,30 +102,30 @@ namespace ranged
 		pair_end(const CA& ca, const CB& cb) 
 	{ return { std::end(ca), std::end(cb) }; }
 
-	template <class ITA, class ITB>
-	class PairIterator
+	namespace impl
 	{
-		using refA = typename std::iterator_traits<std::remove_reference_t<ITA>>::reference;
-		using refB = typename std::iterator_traits<std::remove_reference_t<ITB>>::reference;
+		template <class ITA, class ITB>
+		class PairIterator
+		{
+			using refA = typename std::iterator_traits<ITA>::reference;
+			using refB = typename std::iterator_traits<ITB>::reference;
 
-		ITA _ita;
-		ITB _itb;
-	public:
-		using iterator_category = std::input_iterator_tag;
-		using difference_type = std::ptrdiff_t;
-		using value_type = std::pair<refA, refB>;
-		using reference = value_type;
-		using pointer = value_type*;
+			ITA _ita;
+			ITB _itb;
+		public:
+			PairIterator(ITA ita, ITB itb) : _ita(std::forward<ITA>(ita)), _itb(std::forward<ITB>(itb)) { }
 
-		PairIterator(ITA ita, ITB itb) : _ita(std::forward<ITA>(ita)), _itb(std::forward<ITB>(itb)) { }
+			PairIterator& operator++() { ++_ita; ++_itb; return *this; }
 
-		PairIterator& operator++() { ++_ita; ++_itb; return *this; }
+			std::pair<refA, refB> operator*() const { return { *_ita, *_itb }; }
 
-		reference operator*() const { return { *_ita, *_itb }; }
+			template <class SA, class SB>
+			bool operator!=(const PairEnd<SA, SB>& end) { return _ita != end.a && _itb != end.b; }
+		};
+	}
+	template <class ITA, class ITB>
+	using PairIterator = details::As<std::input_iterator_tag, impl::PairIterator<ITA, ITB>>;
 
-		template <class SA, class SB>
-		bool operator!=(const PairEnd<SA, SB>& end) { return _ita != end.a && _itb != end.b; }
-	};
 	template <class CA, class CB>
 	PairIterator<iterator_of<const CA>, iterator_of<const CB>> 
 		pair_begin(const CA& ca, const CB& cb) 
@@ -131,118 +160,83 @@ namespace ranged
 		auto operator()(const C& c) const
 		{ 
 			return zip(range(
-				IntegerIncreaser<size_t>(0), 
-				IntegerIncreaser<size_t>(std::numeric_limits<size_t>::max())), c); }
+				Increaser<size_t>(0), 
+				Increaser<size_t>(std::numeric_limits<size_t>::max())), c); }
 	};
 	static constexpr Enumerator enumerate;
 
-	class Delimiterator
+	namespace impl
 	{
-		std::string _delim;
-		bool _first;
-	public:
-		using iterator_category = std::forward_iterator_tag;
-		using difference_type = std::ptrdiff_t;
-		using value_type = std::string;
-		using reference = std::string_view;
-		using pointer = value_type*;
+		class Delimiterator
+		{
+			static constexpr std::string_view _empty{};
+			std::string _delim;
+			bool _first;
+		public:
+			Delimiterator(std::string delim) : _delim(std::move(delim)) { }
 
-		Delimiterator(std::string delim) : _delim(std::move(delim)) { }
+			Delimiterator& operator++() { _first = false; return *this; }
 
-		Delimiterator& operator++() { _first = false; return *this; }
+			std::string_view operator*() const { return _first ? _empty : _delim; }
 
-		reference operator*() const { return _first ? std::string_view{} : _delim; }
-
-		bool operator!=(End) const { return true; }
-	};
+			bool operator!=(End) const { return true; }
+		};
+	}
+	using Delimiterator = details::As<std::forward_iterator_tag, impl::Delimiterator>;
 
 	inline auto delimit(std::string delim) { return zip(Range<Delimiterator, End>{ std::move(delim), {} }); }
 
-	template <template<class> class MetaIT>
-	struct Getter : public RangeOperator<Getter<MetaIT>>
+	template <class Map>
+	struct Mapper : public RangeOperator<Mapper<Map>>
 	{
-		template <class C>
-		Range<MetaIT<iterator_of<const C>>, sentinel_of<const C>> operator()(const C& c) const { return { std::begin(c), std::end(c) }; }
-	};
-
-	template <class IT>
-	class KeyIterator
-	{
-		IT _it;
-	public:
-		using iterator_category = std::forward_iterator_tag;
-		using difference_type = std::ptrdiff_t;
-		using value_type = const decltype(std::declval<IT>()->first);
-		using reference = value_type&;
-		using pointer = value_type*;
-
-		KeyIterator(IT it) : _it(std::move(it)) { }
-
-		KeyIterator& operator++() { ++_it; return *this; }
-
-		reference operator*() const { return _it->first; }
-
-		template <class S>
-		bool operator!=(const S& other) { return _it != other; }
-	};
-	static constexpr Getter<KeyIterator> keys;
-
-	template <class IT>
-	class ValueIterator
-	{
-		IT _it;
-	public:
-		using iterator_category = std::forward_iterator_tag;
-		using difference_type = std::ptrdiff_t;
-		using value_type = const decltype(std::declval<IT>()->second);
-		using reference = value_type&;
-		using pointer = value_type*;
-
-		ValueIterator(IT it) : _it(std::move(it)) { }
-
-		ValueIterator& operator++() { ++_it; return *this; }
-
-		reference operator*() const { return _it->second; }
-
-		template <class S>
-		bool operator!=(const S& other) { return _it != other; }
-	};
-	static constexpr Getter<ValueIterator> values;
-
-	template <class F>
-	class Mapper : public RangeOperator<Mapper<F>>
-	{
-		F _f;
-	public:
-		Mapper(F f) : _f(std::move(f)) { }
-
-		template <class IT, class F>
-		class Iterator
+		Map _map;
+		template <class IT>
+		class IteratorImpl
 		{
 			IT _it;
-			F _f;
+			Map _map;
 		public:
-			using iterator_category = std::forward_iterator_tag;
-			using difference_type = std::ptrdiff_t;
-			using value_type = decltype(_f(*_it));
-			using reference = value_type;
-			using pointer = value_type*;
+			IteratorImpl(Map map, IT it) : _map(std::move(map)), _it(std::move(it)) { }
 
-			Iterator(IT it, F f) : _it(std::move(it)), _f(std::move(f)) { }
+			IteratorImpl& operator++() { ++_it; return *this; }
 
-			Iterator& operator++() { ++_it; return *this; }
-
-			reference operator*() const { return _f(*_it); }
+			decltype(auto) operator*() const { return _map(*_it); }
 
 			template <class S>
 			bool operator!=(const S& other) { return _it != other; }
 		};
+	public:
+		template <class IT>
+		using Iterator = details::As<category_of<IT>, IteratorImpl<IT>>;
+
+		Mapper() = default;
+		Mapper(Map map) : _map(std::move(map)) { }
 
 		template <class C>
-		Range<Iterator<iterator_of<C>, F>, sentinel_of<C>>  operator()(const C& c) const { return { { std::begin(c), _f }, std::end(c) }; }
+		Range<Iterator<iterator_of<const C>>, sentinel_of<const C>> operator()(const C& c) const { return { { _map, std::begin(c) }, std::end(c) }; }
 	};
+
+	namespace details
+	{
+		struct KeyGetter
+		{
+			template <class T>
+			decltype(auto) operator()(T&& value) const { return value.first; }
+		};
+		struct ValueGetter
+		{
+			template <class T>
+			decltype(auto) operator()(T&& value) const { return value.second; }
+		};
+	}
+
+	static constexpr Mapper<details::KeyGetter> keys;
+	static constexpr Mapper<details::ValueGetter> values;
+
 	template <class F>
 	Mapper<F> map(F f) { return { std::move(f) }; }
+	template <class F>
+	auto mapPair(F f) { return map([f](auto&& pair) { return f(pair.first, pair.second); }); }
 
 	template <class T>
 	auto equals(T value) { return map([value](auto&& arg) { return arg == value; }); }

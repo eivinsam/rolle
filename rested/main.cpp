@@ -98,56 +98,51 @@ public:
 
 		int id = 0;
 
+		auto pop = [](auto&& it) { std::string_view r = *it; ++it; return r; };
+
 		if (seg != request.location.end())
 		{
 			if (isdigit(seg->front()))
 			{
-				for (auto d : *seg | map(read_digit))
+				for (auto d : pop(seg) | map(read_digit))
 					if (d < 10)
 						id = id * 10 + d;
 					else
 						return;
-				++seg;
 			}
 		}
 
-		std::string_view columns;
-		if (seg != request.location.end())
-		{
-			columns = *seg;
-			++seg;
-		}
+		const auto columns = seg == request.location.end() ? 
+			std::vector<std::string_view>{} : 
+			flatten(pop(seg) | split(","));
 
-		if (seg != request.location.end() || !all(columns | map([](char c) { return isalpha(c) || c == ','; })))
+		static const auto allalpha = [](const std::string_view& s) { return all(s | map(isalpha)); };
+		if (seg != request.location.end() || !all(columns | map(allalpha)))
 			return;
 
 		switch (request.method)
 		{
 		case Method::Get: 
-			if (columns.empty() && request.query.empty())
-			{
-				auto select_all = _db->selectAll().from(_table);
-				_json_result(res, id == 0 ? Query(select_all) : Query(std::move(select_all).where({ equal("id", id) })) );
-			}
-			else
-			{
-				auto select = (columns.empty() ? _db->selectAll() : _db->select(columns | split(","))).from(_table);
-				_json_result(res, columns.empty() ? 
-					Query(select) : 
-					Query(std::move(select).where(request.query | map([](auto&& kv) { return equal(kv.first, kv.second); }))));
-			}
+		{
+			auto query = request.query;
+			if (id != 0)
+				query.emplace_back("id", std::to_string(id));
+			static const auto equal_pair = [](auto&& kv) { return equal(kv.first, kv.second); };
+			auto select_from = (columns.empty() ? _db->selectAll() : _db->select(columns)).from(_table);
+			_json_result(res, query.empty() ?
+				Query(select_from) :
+				Query(std::move(select_from).where(query | mapPair(equal))));
 			return;
+		}
 		case Method::Put:
 			if (id == 0 || columns.empty() || !request.query.empty())
 				res.status = Status::MethodNotAllowed;
 			else
 			{
-
 				auto body = json::parse(request.body);
-				auto split_columns = ranged::flatten(columns | split(","));
-				std::cout << "want to put '" << request.body << "' into columns " << split_columns << "\n";
+				std::cout << "want to put '" << request.body << "' into columns " << columns << "\n";
 
-				if (split_columns.size() != 1)
+				if (columns.size() != 1)
 				{
 					res.status = Status::NotImplemented;
 				}
@@ -158,7 +153,7 @@ public:
 				else 
 				{
 					_db->update(_table)
-						.set({ db::equal(std::string(split_columns[0]), _store_json(body)) })
+						.set({ db::equal(std::string(columns[0]), _store_json(body)) })
 						.where({ equal("id", std::to_string(id)) })
 						.exec();
 					res.status = Status::OK;

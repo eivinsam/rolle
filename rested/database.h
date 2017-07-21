@@ -229,6 +229,8 @@ namespace db
 			End end() { return {}; }
 
 			void exec() { _prepare().exec(); }
+
+			operator Query() { return _prepare(); }
 		};
 
 		class Where : public ReadyStep
@@ -303,6 +305,8 @@ namespace db
 			Set set(const C& criteria) && { return { std::move(*this), criteria }; }
 			Set set(const std::initializer_list<Criterium>& criteria) && { return { std::move(*this), criteria }; }
 		};
+
+		Query query(const string& query);
 	public:
 
 		Database(const std::string& filename) : _handle(_open(filename.c_str())) { }
@@ -314,8 +318,6 @@ namespace db
 		Select selectAll() { return select({ "*" }); }
 
 		Update update(string_view table) { return { *this, table }; }
-
-		Query query(const string& query);
 
 		sqlite_int64 lastInsert() { return sqlite3_last_insert_rowid(_handle.get()); }
 	};

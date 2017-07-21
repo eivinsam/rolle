@@ -30,8 +30,6 @@ class TableLocation : public Location
 {
 	std::shared_ptr<Database> _db;
 	std::string _table;
-	Query _select_all;
-	Query _by_id;
 
 	template <class T>
 	static std::enable_if_t<std::is_integral_v<T>, std::string> 
@@ -86,11 +84,7 @@ class TableLocation : public Location
 	}
 public:
 	TableLocation(shared<Database> db, std::string table) : 
-		_db(std::move(db)), _table(std::move(table))
-	{
-		_select_all = _db->query("SELECT * FROM " + _table);
-		_by_id = _db->query("SELECT * FROM " + _table + " WHERE id = ?");
-	}
+		_db(std::move(db)), _table(std::move(table))  { }
 
 	void handle(const Request& request, SegmentIterator seg, Response& res) override
 	{
@@ -131,24 +125,16 @@ public:
 		{
 		case Method::Get: 
 			if (columns.empty() && request.query.empty())
-				_json_result(res, id == 0 ? _select_all : _by_id(id));
+			{
+				auto select_all = _db->selectAll().from(_table);
+				_json_result(res, id == 0 ? Query(select_all) : Query(std::move(select_all).where({ equal("id", id) })) );
+			}
 			else
 			{
-				std::string query_text = "SELECT " + std::string(columns.empty() ? "*" : columns) + " FROM " + _table;
-				if (id != 0)
-					((query_text += " WHERE id = '") += std::to_string(id)) += "'";
-				for (auto& kv : request.query)
-				{
-					query_text += (id != 0 ? " AND " : " WHERE "); id = 0;
-					query_text += kv.first;
-					if (kv.second == "null")
-						query_text += " IS null";
-					else
-						((query_text += " = '") += kv.second) += "'";
-				}
-
-				std::cout << query_text << "\n";
-				_json_result(res, _db->query(query_text));
+				auto select = (columns.empty() ? _db->selectAll() : _db->select(columns | split(","))).from(_table);
+				_json_result(res, columns.empty() ? 
+					Query(select) : 
+					Query(std::move(select).where(request.query | map([](auto&& kv) { return equal(kv.first, kv.second); }))));
 			}
 			return;
 		case Method::Put:

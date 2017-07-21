@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <tuple>
 #include <stdexcept>
 #include <memory>
@@ -199,14 +198,6 @@ namespace db
 			std::vector<Value> binds;
 
 			Builder(Database& db) : db(db) { }
-			~Builder()
-			{
-				std::cout << "Builder end of life: '" << so_far << "'\n";
-				std::cout << "  Bound to ";
-				for (auto&& b : binds)
-					std::visit([](auto&& v) { std::cout << v << " "; }, b);
-				std::cout << "\n";
-			}
 
 			Builder& operator<<(string_view piece) { so_far += piece; return *this; }
 		};

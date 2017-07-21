@@ -6,6 +6,7 @@
 #include "range.h"
 #include "string.h"
 
+#include <iostream>
 #include <algorithm>
 #include <cstdint>
 #include <array>
@@ -125,13 +126,10 @@ public:
 		case Method::Get: 
 		{
 			auto query = request.query;
-			if (id != 0)
-				query.emplace_back("id", std::to_string(id));
-			static const auto equal_pair = [](auto&& kv) { return equal(kv.first, kv.second); };
-			auto select_from = (columns.empty() ? _db->selectAll() : _db->select(columns)).from(_table);
-			_json_result(res, query.empty() ?
-				Query(select_from) :
-				Query(std::move(select_from).where(query | mapPair(equal))));
+			if (id != 0) query.emplace_back("id", std::to_string(id));
+			_json_result(res,
+				(columns.empty() ? _db->selectAll() : _db->select(columns))
+				.from(_table).where(query | mapPair(equal)));
 			return;
 		}
 		case Method::Put:
@@ -158,15 +156,6 @@ public:
 						.exec();
 					res.status = Status::OK;
 				}
-				//std::string query_text = "UPDATE " + _table + " SET ";
-				//for (auto&& kd : query | keys | delimit(", "))
-				//	((query_text += kd.second) += kd.first) += " = ?";
-				//(query_text += " WHERE id = ") += std::to_string(id);
-				//std::cout << query_text << "\n";
-				//auto q = _db->query(query_text);
-				//for (auto&& iv : query | values | enumerate)
-				//	q.bind(iv.first+1, iv.second);
-				//q.exec();
 			}
 			break;
 		default:

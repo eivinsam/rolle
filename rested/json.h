@@ -22,7 +22,6 @@ namespace json
 		using details::ValueVariant::variant;
 	};
 
-
 	Value parse(std::string_view stored);
 
 
@@ -40,9 +39,10 @@ namespace json
 	std::string stringify(const std::vector<T>& array)
 	{
 		static const auto comma = ", ";
-		auto delim = "[ ";
+		auto delim = "";
 		std::string result;
 
+		result.append("[ ");
 		for (auto&& e : array)
 		{
 			result.append(delim).append(stringify(e));
@@ -55,9 +55,10 @@ namespace json
 	std::string stringify(const std::vector<std::pair<std::string, T>>& object)
 	{
 		static const auto comma = ", ";
-		auto delim = "{ ";
+		auto delim = "";
 		std::string result;
 
+		result.append("{ ");
 		for (auto&& e : object)
 		{
 			result.append(delim).append(stringify(e.first)).append(": ").append(stringify(e.second));

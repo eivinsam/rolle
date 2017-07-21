@@ -32,6 +32,11 @@ h3:first-letter
     font-size: 125%;
     padding-right: 0.1em;
 }
+h5
+{
+    margin-top: 0.4em;
+    margin-bottom: 0.1em;
+}
 #panels
 {
     display: inline-block;
@@ -76,6 +81,7 @@ h3:first-letter
 .tab-bar
 {
     display: flex;
+    margin-top: 0.5em;
 }
 .tab
 {
@@ -97,24 +103,30 @@ ul
     padding: 0;
     list-style-type: none;
 }
-li
+ul li
 {
     position: relative;
     padding: 0.5em 0.2em;
     margin-bottom: 0.15em;
 }
-li.selected::before
+ul li::before
 {
     display: block;
     position: absolute;
     top: 14%;
     z-index: -1;
-    background: var(--weak-red);
+    background-color: none;
     width: calc(100% - 0.4em);
     height: 66%;
     content: " ";
+    transition: background-color 0.5s ease-out;
 }
-li::after
+ul li.selected::before
+{
+    background-color: var(--weak-red);
+    transition: background-color 0.0s ease-out;
+}
+ul li::after
 {
     display: block;
     position: relative;
@@ -124,6 +136,29 @@ li::after
     width: 66%;
     height: 0.15em;
     content: " ";
+}
+
+.completions
+{
+    display: none;
+    position: absolute;
+    width: calc(100% - 1em);
+    background-color: beige;
+    box-shadow: 0 0.1em 0.4em;
+    border-radius: 0.2em;
+    z-index: 1;
+}
+.completions li
+{
+    padding: 0.1em 0.2em;
+}
+.completions li::after
+{
+    display: none;
+}
+:focus + .completions, .completions:hover
+{
+    display: block;
 }
 .stat
 {
@@ -140,4 +175,8 @@ input
     font-family: 'Eagle Lake', cursive;
     font-size: 1em;
     color: var(--ink-black);
+}
+input:disabled
+{
+    opacity: 0.3;
 }

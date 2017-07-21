@@ -87,7 +87,7 @@ class Tab
 
 
 //function get_json(response: any) { return response.text().then((text: string) => (console.log('recieved:', text), JSON.parse(text))); }
-function get_json(response: any) { return response.json(); }
+function get_json(response: Response) : any { return response.json(); }
 function make_element(type: string, text?: string)
 {
     const e = document.createElement(type);
@@ -108,7 +108,8 @@ function select(element: Element)
         s.classList.remove('selected');
     for (let s = element.nextElementSibling; s != null; s = s.nextElementSibling)
         s.classList.remove('selected');
-    element.classList.add('selected');
+	element.classList.add('selected');
+	setTimeout(() => element.classList.remove('selected'), 100);
 }
 
 
@@ -166,52 +167,10 @@ function makeItem(name: string, on_select: () => void)
     return item;
 }
 
-function getCharacter(character_id: number, new_panel: any)
-{
-	console.log("fetch character " + character_id);
-	new_panel((panel: HTMLElement, set_child: any) =>
-    {
-        fetch('/characters/' + character_id).then(get_json)
-            .then(c => {
-                if (c.length != 1) {
-                    console.log('character ' + character_id + ' has unexpectedly dissapeared');
-                    return;
-                }
-                c = c[0];
-                console.log('got character ' + c.id);
-
-                panel.appendChild(make_element('h3', c.name));
-
-                var form = document.createElement('form');
-
-                var stats = ['str', 'dex', 'nte', 'emp', 'ntu'];
-				const stat_names: { [key: string]: string } =
-                {
-                    'str': 'Strength',
-                    'dex': 'Dexterity',
-                    'nte': 'Intelligence',
-                    'emp': 'Empathy',
-                    'ntu': 'Intuition'
-                };
-                stats.forEach(function (stat) {
-                    var row = document.createElement('div');
-                    row.classList.add('stat');
-                    var label = document.createElement('div'); label.textContent = stat_names[stat];
-                    var value = document.createElement('div'); value.textContent = c[stat];
-                    row.appendChild(label);
-                    row.appendChild(value);
-                    form.appendChild(row);
-                });
-
-                panel.appendChild(form);
-            });
-    });
-    //updateState('char', character_id);
-}
 
 interface NameId
 {
-	id: number;
+	id: string;
 	name: string;
 }
 
@@ -233,7 +192,7 @@ function getAllCharacters(state: State)
 	console.log('fetch characters');
 	fetch('/characters/id,name').then(get_json)
 		.then((data: NameId[]) => makeCharacterItems(list, data, state))
-		.catch(error => console.log(error));
+		.catch(console.log);
 	return list;
 
 }
@@ -244,9 +203,7 @@ function getCharactersAt(place_id: number, state: State)
 	console.log('fetch characters');
 	fetch('/characters/id,name?place=' + (place_id > 0 ? '' + place_id : 'null')).then(get_json)
 		.then((data: NameId[]) => makeCharacterItems(list, data, state))
-        .catch(function (error) {
-            console.log(error);
-        });
+        .catch(console.log);
     return list;
 }
 
@@ -264,9 +221,7 @@ function getPlaces(state: State)
 			list.appendChild(makeItem(p.name, () => state.replace('place'+p.id)));
         });
     })
-    .catch(function (error) {
-        console.log(error);
-    });
+    .catch(console.log);
     return list;
 }
 
@@ -403,8 +358,9 @@ Panel.generator.place = (id, state) =>
 interface CharacterData
 {
 	[key: string]: any;
-	id: number;
+	id: string;
 	name: string;
+	place: string;
 }
 
 Panel.generator.character = (id, state) =>
@@ -445,6 +401,82 @@ Panel.generator.character = (id, state) =>
 			});
 
 			panel.element.appendChild(form);
+
+			panel.element.appendChild(make_element('h5', 'Place'));
+			const place_box = document.createElement('input');
+			console.log('place', typeof(c.place), c.place);
+			if (c.place === null)
+			{
+				place_box.value = 'none';
+			}
+			else
+			{
+				place_box.disabled = true;
+				fetch('/places/' + c.place + '/name,id').then(get_json)
+					.then((data: NameId[]) =>
+					{
+						place_box.value = data[0].name;
+						place_box.disabled = false;
+					});
+			}
+			panel.element.appendChild(place_box);
+			const place_complete = make_element('ul');
+			place_complete.classList.add('completions');
+			const update_place = (p: NameId) =>
+			{
+				const revert = (() =>
+				{
+					const old_value = place_box.value;
+					return () => 
+					{
+						place_box.value = old_value;
+						place_box.style.backgroundColor = '';
+					};
+				})();
+				place_box.value = p.name;
+				if (c.place != p.id)
+				{
+					place_box.style.backgroundColor = 'var(--weak-red)';
+					console.log('place ' + c.place + ' -> ' + p.id);
+					fetch('/characters/' + c.id + '/place',
+						{
+							method: 'PUT',
+							headers: new Headers({ 'Content-Type': 'application/json' }),
+							body: JSON.stringify(p.id)
+						})
+						.then(res =>
+						{
+							if (!res.ok) throw Error(res.statusText);
+							place_box.style.backgroundColor = '';
+
+						})
+						.catch(error =>
+						{
+							revert();
+							console.log(JSON.stringify(error));
+						});
+				}
+			};
+			place_complete.appendChild(makeItem('none', () => update_place({ name: 'none', id: null })));
+			place_box.onfocus = () =>
+				fetch('/places/id,name').then(get_json)
+					.then((data: NameId[]) =>
+					{
+						while (place_complete.childElementCount > 1)
+							place_complete.removeChild(place_complete.lastElementChild);
+						data.forEach(p =>
+							place_complete.appendChild(makeItem(p.name, () => update_place(p))));
+					});
+
+			panel.element.appendChild(place_complete);
+
+			const tabs = new TabView(state,
+				[
+					new Tab('Description', () => make_element('p', 'This character has no description')),
+					new Tab('Skills', () => make_element('p', 'This character has no skills')),
+					new Tab('Items', () => make_element('p', 'This character has no items'))
+				]);
+			panel.append(tabs);
 		});
 	return panel;
 }

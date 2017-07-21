@@ -1,11 +1,31 @@
+#include "json.h"
+
 #include "server.h"
 #include "database.h"
 
 #include "range.h"
+#include "string.h"
+#include "overload.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <array>
+
+using namespace db;
+
+template <class T>
+static std::ostream& operator<<(std::ostream& out, const std::vector<T>& v)
+{
+	static const char* comma = ", ";
+	const char* delim = "";
+	out << "[";
+	for (auto&& e : v)
+	{
+		out << delim << e;
+		delim = comma;
+	}
+	return out << "]";
+}
 
 class TableLocation : public Location
 {
@@ -14,54 +34,57 @@ class TableLocation : public Location
 	Query _select_all;
 	Query _by_id;
 
+	template <class T>
+	static std::enable_if_t<std::is_integral_v<T>, std::string> 
+		intsToString(T value) { return std::to_string(value); }
+	template <class T>
+	static std::enable_if_t<!std::is_integral_v<T>, T>
+		intsToString(T value) { return value; }
+
+	static constexpr struct
+	{
+		using R = db::Value;
+		R operator()(nullptr_t) const { return nullptr; }
+		R operator()(bool v) const { return int(v); }
+		R operator()(double v) const { return v; }
+		R operator()(const std::string& v) const { return v; }
+		R operator()(const json::Array& v) const { return json::stringify(v); }
+		R operator()(const json::Object& v) const { return json::stringify(v); }
+	} storeJson{};
+
+	db::Value _store_json(const json::Value& value)
+	{
+		using std::get_if;
+		if (get_if<nullptr_t>(&value))
+			return nullptr;
+		if (auto v = get_if<bool>(&value))
+			return int(*v);
+		if (auto v = get_if<double>(&value))
+			return *v;
+		if (auto v = get_if<std::string>(&value))
+			return *v;
+		throw std::runtime_error("Cannot store json arrays or objects");
+	}
+
 	void _json_result(Response& res, Query&& q) { _json_result(res, q); }
 	void _json_result(Response& res, Query& q)
 	{
 		using namespace ranged;
+
+		std::vector<json::Object> data;
+
+		for (auto&& row : q)
+		{
+			data.emplace_back();
+			for (auto&& c : row)
+				std::visit([&](auto v) { data.back().emplace_back(std::string(c.name()), intsToString(std::move(v))); }, c.value());
+		}
+
 		res.status = Status::OK;
 		res.contentType = ContentType::AppJson;
-		res << "[";
-		std::cout << q.sql() << "\n";
-		for (auto&& rd : q | delimit(","))
-		{
-			res << rd.second << "\n  { ";
-			for (auto&& cd : rd.first | delimit(", "))
-			{
-				res << cd.second << '"' << cd.first.name() << "\": ";
-				switch (cd.first.type())
-				{
-				case SQLITE_NULL: res << "null"; break;
-				case SQLITE_INTEGER: res << cd.first.integer(); break;
-				default:
-					res << '"' << cd.first.text() << '"'; 
-					break;
-				}
-			}
-			res << " }";
-		}
-		res << "\n]";
+		res << json::stringify(data);
 		std::cout << "sent: \n" << res.rdbuf() << "\n";
 	}
-	void _post(Response& res, const UriQuery& query)
-	{
-		using namespace ranged;
-		std::string query_text = "INSERT INTO " + _table + "(";
-
-		for (auto&& kd : query | keys | delimit(", "))
-			(query_text += kd.second) += kd.first;
-		query_text += ") VALUES (";
-		for (auto&& kvd : query | delimit(", "))
-			(query_text += kvd.second) += "?";
-		query_text += ")";
-
-		std::cout << query_text << "\n";
-		auto q = _db->query(query_text);
-		for (auto&& iv : query | values | enumerate)
-			q.bind(iv.first + 1, iv.second);
-		q.exec();
-		_json_result(res, _by_id(_db->lastInsert()));
-	}
-
 public:
 	TableLocation(shared<Database> db, std::string table) : 
 		_db(std::move(db)), _table(std::move(table))
@@ -129,7 +152,45 @@ public:
 				_json_result(res, _db->query(query_text));
 			}
 			return;
+		case Method::Put:
+			if (id == 0 || columns.empty() || !request.query.empty())
+				res.status = Status::MethodNotAllowed;
+			else
+			{
+
+				auto body = json::parse(request.body);
+				auto split_columns = ranged::flatten(columns | split(","));
+				std::cout << "want to put '" << request.body << "' into columns " << split_columns << "\n";
+
+				if (split_columns.size() != 1)
+				{
+					res.status = Status::NotImplemented;
+				}
+				else if (auto values = std::get_if<json::Array>(&body))
+				{
+					res.status = Status::NotImplemented;
+				}
+				else 
+				{
+					_db->update(_table)
+						.set({ db::equal(std::string(split_columns[0]), _store_json(body)) })
+						.where({ equal("id", std::to_string(id)) })
+						.exec();
+					res.status = Status::OK;
+				}
+				//std::string query_text = "UPDATE " + _table + " SET ";
+				//for (auto&& kd : query | keys | delimit(", "))
+				//	((query_text += kd.second) += kd.first) += " = ?";
+				//(query_text += " WHERE id = ") += std::to_string(id);
+				//std::cout << query_text << "\n";
+				//auto q = _db->query(query_text);
+				//for (auto&& iv : query | values | enumerate)
+				//	q.bind(iv.first+1, iv.second);
+				//q.exec();
+			}
+			break;
 		default:
+			res.status = Status::MethodNotAllowed;
 			return;
 		}
 	}

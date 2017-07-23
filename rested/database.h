@@ -12,9 +12,10 @@
 
 #include "range.h"
 
+#include "view.h"
+
 namespace db
 {
-
 	class Database;
 
 	class STMT
@@ -248,7 +249,7 @@ namespace db
 
 			template <class C>
 			Where where(const C& criteria) && { return { std::move(*this), criteria }; }
-			Where where(const std::initializer_list<Criterium>& criteria) && { return { std::move(*this), criteria }; }
+			Where where(const ViewList<Criterium>& criteria) && { return { std::move(*this), criteria }; }
 		};
 		class Select : public BuildStep
 		{
@@ -285,7 +286,7 @@ namespace db
 
 			template <class C>
 			Where where(const C& criteria) && { return { std::move(*this), criteria }; }
-			Where where(const std::initializer_list<Criterium>& criteria) && { return { std::move(*this), criteria }; }
+			Where where(const ViewList<Criterium>& criteria) && { return { std::move(*this), criteria }; }
 		};
 		class Update : public BuildStep
 		{
@@ -304,8 +305,7 @@ namespace db
 
 		template <class C>
 		Select select(const C& columns) { return { *this, columns }; }
-		template <class T>
-		Select select(const std::initializer_list<T>& columns) { return { *this, columns }; }
+		Select select(const std::initializer_list<std::string_view>& columns) { return { *this, columns }; }
 		Select selectAll() { return select({ "*" }); }
 
 		Update update(string_view table) { return { *this, table }; }

@@ -75,7 +75,7 @@ class TableLocation : public Location
 		{
 			data.emplace_back();
 			for (auto&& c : row)
-				std::visit([&](auto v) { data.back().emplace_back(std::string(c.name()), intsToString(std::move(v))); }, c.value());
+				c.value().visit([&](auto v) { data.back().emplace_back(std::string(c.name()), intsToString(std::move(v))); });
 		}
 
 		res.status = Status::OK;
@@ -197,6 +197,25 @@ int main(int argc, char* argv[])
 
 	try
 	{
+		const auto id = integer("id").primaryKey();
+		const auto name = text("name").notNull();
+		const auto desc = text("desc").notNull("");
+		Query(db->create("places", { id, name, desc }, {}));
+		Query(db->create("groups", { id, name, desc }, {}));
+		Query(db->create("charactes", 
+		{ 
+			id, name, desc, integer("group"), integer("place"), 
+			integer("str").notNull(5),
+			integer("dex").notNull(5),
+			integer("nte").notNull(5),
+			integer("emp").notNull(5),
+			integer("ntu").notNull(5)
+		},
+		{
+			foreignKey("group").references("groups", "id"),
+			foreignKey("place").references("places", "id")
+		}));
+
 		serverRoot.addLocation("places", make_shared<TableLocation>(db, "places"));
 		serverRoot.addLocation("characters", make_shared<TableLocation>(db, "characters"));
 		serverRoot.addLocation("interface", make_shared<Folder>("interface"));

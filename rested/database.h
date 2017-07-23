@@ -43,7 +43,43 @@ namespace db
 		}
 	}
 
-	using Value = std::variant<nullptr_t, int, sqlite_int64, double, std::string>;
+	inline std::string escape(nullptr_t) { return "null"; }
+	inline std::string escape(sqlite_int64 value) { return std::to_string(value); }
+	inline std::string escape(double value) { return std::to_string(value); }
+	inline std::string escape(std::string_view str)
+	{
+		std::string result;
+		result.reserve(str.size() + 8);
+		result.push_back('\'');
+		for (auto ch : str)
+			if (ch == '\'') result.append("''");
+			else            result.push_back(ch);
+		result.push_back('\'');
+		return result;
+	}
+
+	using ValueVariant = std::variant<nullptr_t, sqlite_int64, double, std::string>;
+	class Value : public ValueVariant
+	{
+		template <class F>
+		using result_t = decltype(std::visit(std::declval<F>(), std::declval<const ValueVariant&>()));
+	public:
+		using ValueVariant::variant;
+		Value(int value) : ValueVariant(sqlite_int64(value)) { }
+
+		template <class F>
+		std::enable_if_t<std::is_same_v<void, result_t<F>>> visit(F&& f) const 
+		{
+			std::visit(std::forward<F>(f), static_cast<const ValueVariant&>(*this)); 
+		}
+		template <class F>
+		std::enable_if_t<!std::is_same_v<void, result_t<F>>, result_t<F>> visit(F&& f) const
+		{
+			return std::visit(std::forward<F>(f), static_cast<const ValueVariant&>(*this));
+		}
+
+		std::string escape() const { return visit([](auto&& v) { return ::db::escape(v); }); }
+	};
 
 	inline std::ostream& operator<<(std::ostream& out, nullptr_t) { return out << "null"; }
 
@@ -160,7 +196,6 @@ namespace db
 
 		void bind(int pos, nullptr_t)              { _row.reset(); _row._do(sqlite3_bind_null, pos); }
 		void bind(int pos, double value)           { _row.reset(); _row._do(sqlite3_bind_double, pos, value); }
-		void bind(int pos, int    value)           { _row.reset(); _row._do(sqlite3_bind_int, pos, value); }
 		void bind(int pos, sqlite_int64 value)     { _row.reset(); _row._do(sqlite3_bind_int64, pos, value); }
 		void bind(int pos, std::string_view value) { _row.reset(); _row._do(sqlite3_bind_text, pos, value.data(), value.size(), SQLITE_STATIC); }
 
@@ -177,7 +212,40 @@ namespace db
 		}
 	};
 
+	struct ColumnDefinition
+	{
+		std::string so_far;
 
+		ColumnDefinition&& primaryKey() && { so_far.append(" PRIMARY KEY"); return std::move(*this); }
+		ColumnDefinition&& notNull() && { so_far.append(" NOT NULL"); return std::move(*this); }
+		ColumnDefinition&& notNull(const Value& default_value) && { return std::move(*this).notNull().defaultValue(default_value); }
+		ColumnDefinition&& defaultValue(const Value& v) &&
+		{
+			so_far.append(" DEFAULT ").append(v.escape());
+			return std::move(*this);
+		}
+	};
+	inline ColumnDefinition integer(std::string_view name) { return { escape(name).append(" INTEGER") }; }
+	inline ColumnDefinition    text(std::string_view name) { return { escape(name).append(" TEXT") }; }
+
+	struct TableConstraint
+	{
+		std::string so_far;
+	};
+	struct ForeignKey : public TableConstraint 
+	{
+		ForeignKey(std::string_view columns)
+		{ 
+			so_far.append("FOREIGN KEY (").append(escape(columns)).append(")");
+		}
+
+		ForeignKey&& references(std::string_view table, std::string_view column) &&
+		{
+			so_far.append(" REFERENCES ").append(escape(table)).append("(").append(escape(column)).append(")");
+			return std::move(*this);
+		}
+	};
+	inline ForeignKey foreignKey(std::string_view column) { return { column }; }
 
 	class Database
 	{
@@ -298,6 +366,29 @@ namespace db
 			Set set(const std::initializer_list<Criterium>& criteria) && { return { std::move(*this), criteria }; }
 		};
 
+		class Create : public ReadyStep
+		{
+		public: 
+			template <class Col, class Con>
+			Create(Database& db, string_view table, const Col& columns, const Con& constraints) : ReadyStep(db)
+			{
+				*_build << "CREATE TABLE IF NOT EXISTS " << table << " (";
+				static const std::string_view comma = ", ";
+				std::string_view delim = "";
+				for (const ColumnDefinition& c : columns)
+				{
+					*_build << delim << c.so_far;
+					delim = comma;
+				}
+				for (const TableConstraint& c : constraints)
+				{
+					*_build << delim << c.so_far;
+					delim = comma;
+				}
+				*_build << ")";
+			}
+		};
+
 		Query query(const string& query);
 	public:
 
@@ -309,6 +400,13 @@ namespace db
 		Select selectAll() { return select({ "*" }); }
 
 		Update update(string_view table) { return { *this, table }; }
+
+		template <class Col, class Con>
+		Create create(string_view table, const Col& columns, const Con& constraints) { return { *this, table, columns, constraints }; }
+		Create create(string_view table, const ViewList<ColumnDefinition>& columns, const ViewList<TableConstraint>& constraints) 
+		{
+			return { *this, table, columns, constraints };
+		}
 
 		sqlite_int64 lastInsert() { return sqlite3_last_insert_rowid(_handle.get()); }
 	};

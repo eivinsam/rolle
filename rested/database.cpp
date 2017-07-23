@@ -31,12 +31,12 @@ namespace db
 		std::cout << "Builder prepare: '" << _build->so_far << "'\n";
 		if (!_build->binds.empty()) std::cout << "  Bound to ";
 		for (auto&& b : _build->binds)
-			std::visit([](auto&& v) { std::cout << v << " "; }, b);
+			b.visit([](auto&& v) { std::cout << v << " "; });
 		std::cout << "\n";
 
 		Query q = _build->db.query(_build->so_far);
 		for (auto&& iv : _build->binds | ranged::enumerate)
-			std::visit([&](auto&& v) { q.bind(iv.first + 1, v); }, iv.second);
+			iv.second.visit([&](auto&& v) { q.bind(iv.first + 1, v); });
 		return q;
 	}
 }

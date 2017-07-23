@@ -150,6 +150,7 @@
     <ClInclude Include="database.h" />
     <ClInclude Include="json.h" />
     <ClInclude Include="pointers.h" />
+    <ClInclude Include="probe.h" />
     <ClInclude Include="range.h" />
     <ClInclude Include="server.h" />
     <ClInclude Include="string.h" />

@@ -28,11 +28,14 @@ namespace db
 	}
 	Query Database::ReadyStep::_prepare()
 	{
-		std::cout << "Builder prepare: '" << _build->so_far << "'\n";
-		if (!_build->binds.empty()) std::cout << "  Bound to ";
-		for (auto&& b : _build->binds)
-			b.visit([](auto&& v) { std::cout << v << " "; });
-		std::cout << "\n";
+		std::cout << "  == Builder prepare ==\n" << _build->so_far << "\n";
+		if (!_build->binds.empty())
+		{
+			std::cout << "  Bound to ";
+			for (auto&& b : _build->binds)
+				b.visit([](auto&& v) { std::cout << v << " "; });
+			std::cout << "\n";
+		}
 
 		Query q = _build->db.query(_build->so_far);
 		for (auto&& iv : _build->binds | ranged::enumerate)

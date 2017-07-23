@@ -234,18 +234,35 @@ namespace db
 	};
 	struct ForeignKey : public TableConstraint 
 	{
-		ForeignKey(std::string_view columns)
+		template <class C>
+		ForeignKey(const C& columns)
 		{ 
-			so_far.append("FOREIGN KEY (").append(escape(columns)).append(")");
+			static const std::string_view comma = ", ";
+			std::string_view delim = "";
+			so_far.append("FOREIGN KEY (");
+			for (auto&& c : columns)
+			{
+				so_far.append(delim).append(escape(c));
+				delim = comma;
+			}
+			so_far.append(")");
 		}
 
-		ForeignKey&& references(std::string_view table, std::string_view column) &&
+		ForeignKey&& references(std::string_view table, std::initializer_list<std::string_view> columns) &&
 		{
-			so_far.append(" REFERENCES ").append(escape(table)).append("(").append(escape(column)).append(")");
+			static const std::string_view comma = ", ";
+			std::string_view delim = "";
+			so_far.append(" REFERENCES ").append(escape(table)).append("(");
+			for (auto&& c : columns)
+			{
+				so_far.append(delim).append(escape(c));
+				delim = comma;
+			}
+			so_far.append(")");
 			return std::move(*this);
 		}
 	};
-	inline ForeignKey foreignKey(std::string_view column) { return { column }; }
+	inline ForeignKey foreignKey(std::initializer_list<std::string_view> column) { return { column }; }
 
 	class Database
 	{

@@ -212,8 +212,8 @@ int main(int argc, char* argv[])
 			integer("ntu").notNull(5)
 		},
 		{
-			foreignKey("group").references("groups", "id"),
-			foreignKey("place").references("places", "id")
+			foreignKey({ "group" }).references("groups", { "id" }),
+			foreignKey({ "place" }).references("places", { "id" })
 		}));
 
 		serverRoot.addLocation("places", make_shared<TableLocation>(db, "places"));
